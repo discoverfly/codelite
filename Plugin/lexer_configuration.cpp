@@ -296,8 +296,9 @@ void LexerConf::Apply(wxStyledTextCtrl* ctrl, bool applyKeywords)
 #if defined(__WXMSW__)
     ctrl->SetTechnology(wxSTC_TECHNOLOGY_DIRECTWRITE);
     ctrl->SetDoubleBuffered(true);
+    ctrl->SetFontQuality(wxSTC_EFF_QUALITY_LCD_OPTIMIZED);
 #endif
-
+    
     OptionsConfigPtr options = EditorConfigST::Get()->GetOptions();
     bool tooltip(false);
 
