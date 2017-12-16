@@ -1,4 +1,5 @@
 #include "Notebook.h"
+#if !USE_AUI_NOTEBOOK
 #include "clTabRendererClassic.h"
 #include "clTabRendererCurved.h"
 #include "clTabRendererSquare.h"
@@ -282,7 +283,7 @@ bool clTabCtrl::IsActiveTabVisible(const clTabInfo::Vec_t& tabs) const
 
     for(size_t i = 0; i < tabs.size(); ++i) {
         clTabInfo::Ptr_t t = tabs.at(i);
-        if(t->IsActive() && ((!IsVerticalTabs() && clientRect.Contains(t->GetRect())) ||
+        if(t->IsActive() && ((!IsVerticalTabs() && clientRect.Intersects(t->GetRect())) ||
                              (IsVerticalTabs() && clientRect.Intersects(t->GetRect()))))
             return true;
     }
@@ -413,12 +414,9 @@ void clTabCtrl::OnPaint(wxPaintEvent& e)
     }
 
     if(rect.GetSize().x > 0 && rect.GetSize().y > 0) {
-#ifdef __WXGTK__
-        wxDC &gcdc = dc;
-#else
         wxGCDC gcdc(dc);
         PrepareDC(gcdc);
-#endif
+
         if(!IsVerticalTabs()) {
             gcdc.SetClippingRegion(clientRect.x, clientRect.y, clientRect.width - CHEVRON_SIZE, clientRect.height);
         }
@@ -436,23 +434,38 @@ void clTabCtrl::OnPaint(wxPaintEvent& e)
             // send event per tab to get their colours
             clColourEvent colourEvent(wxEVT_COLOUR_TAB);
             colourEvent.SetPage(tab->GetWindow());
+            clTabColours* pColours = &m_colours;
+            clTabColours user_colours;
             if((GetStyle() & kNotebook_EnableColourCustomization) && EventNotifier::Get()->ProcessEvent(colourEvent)) {
-                clTabColours colours;
-                colours.InitFromColours(colourEvent.GetBgColour(), colourEvent.GetFgColour());
-                m_art->Draw(this, gcdc, *tab.get(), colours, m_style);
-            } else {
-                m_art->Draw(this, gcdc, *tab.get(), m_colours, m_style);
+                user_colours.InitFromColours(colourEvent.GetBgColour(), colourEvent.GetFgColour());
+                pColours = &user_colours;
             }
 
+#ifdef __WXGTK__
+            m_art->Draw(this, gcdc, dc, *tab.get(), (*pColours), m_style);
 #else
-            m_art->Draw(this, gcdc, *tab.get(), m_colours, m_style);
+            m_art->Draw(this, gcdc, gcdc, *tab.get(), (*pColours), m_style);
+#endif
+#else
+            // Under GTK there is a problem with HiDPI screens and wxGCDC for drawing text
+            // the text is rendered too small. Use the wxPaintDC instead of the wxGCDC just for
+            // drawing text
+#ifdef __WXGTK__
+            m_art->Draw(this, gcdc, dc, *tab.get(), m_colours, m_style);
+#else
+            m_art->Draw(this, gcdc, gcdc, *tab.get(), m_colours, m_style);
+#endif
 #endif
         }
 
         // Redraw the active tab
         if(activeTabInex != wxNOT_FOUND) {
             clTabInfo::Ptr_t activeTab = m_visibleTabs.at(activeTabInex);
-            m_art->Draw(this, gcdc, *activeTab.get(), activeTabColours, m_style);
+#ifdef __WXGTK__
+            m_art->Draw(this, gcdc, dc, *activeTab.get(), activeTabColours, m_style);
+#else
+            m_art->Draw(this, gcdc, gcdc, *activeTab.get(), activeTabColours, m_style);
+#endif
         }
         if(!IsVerticalTabs()) { gcdc.DestroyClippingRegion(); }
         if(activeTabInex != wxNOT_FOUND) {
@@ -464,6 +477,8 @@ void clTabCtrl::OnPaint(wxPaintEvent& e)
 
         if((GetStyle() & kNotebook_ShowFileListButton)) {
             // Draw the chevron
+            gcdc.SetPen(m_colours.inactiveTabPenColour);
+            gcdc.DrawLine(m_chevronRect.GetTopLeft(), m_chevronRect.GetTopRight());
             m_art->DrawChevron(this, gcdc, m_chevronRect, m_colours);
         }
 
@@ -956,7 +971,7 @@ bool clTabCtrl::RemovePage(size_t page, bool notify, bool deletePage)
     // Choose a new selection, but only if we are deleting the active tab
     nextSelection = NULL;
     if(deletingSelection) {
-        while(!m_history->GetHistory().IsEmpty() && !nextSelection) {
+        while(!m_history->GetHistory().empty() && !nextSelection) {
             nextSelection = m_history->PrevPage();
             if(!GetTabInfo(nextSelection)) {
                 // The history contains a tab that no longer exists
@@ -1319,38 +1334,6 @@ void clTabCtrl::OnMouseScroll(wxMouseEvent& event)
     }
 }
 
-// ----------------------------------------------------------------------
-// clTabHistory
-// ----------------------------------------------------------------------
-
-clTabHistory::clTabHistory() {}
-
-clTabHistory::~clTabHistory() {}
-
-void clTabHistory::Clear() { m_history.clear(); }
-
-void clTabHistory::Pop(wxWindow* page)
-{
-    if(!page) return;
-
-    int where = m_history.Index(page);
-    if(where != wxNOT_FOUND) { m_history.Remove((void*)page); }
-}
-
-wxWindow* clTabHistory::PrevPage()
-{
-    if(m_history.empty()) { return NULL; }
-    // return the top of the heap
-    return static_cast<wxWindow*>(m_history.Item(0));
-}
-
-void clTabHistory::Push(wxWindow* page)
-{
-    if(page == NULL) return;
-    Pop(page);
-    m_history.Insert((void*)page, 0);
-}
-
 // ---------------------------------------------------------------------------
 // DnD
 // ---------------------------------------------------------------------------
@@ -1385,3 +1368,5 @@ bool clTabCtrlDropTarget::OnDropText(wxCoord x, wxCoord y, const wxString& data)
     m_tabCtrl->MoveActiveToIndex(realPos, align);
     return true;
 }
+
+#endif // USE_AUI_NOTEBOOK

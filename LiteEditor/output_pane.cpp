@@ -31,16 +31,16 @@
 #include "findusagetab.h"
 #include "frame.h"
 #include "new_build_tab.h"
+#include "output_pane.h"
 #include "pluginmanager.h"
 #include "replaceinfilespanel.h"
 #include "shelltab.h"
 #include "taskpanel.h"
 #include "wxcl_log_text_ctrl.h"
-#include "output_pane.h"
 #include <algorithm>
+#include <wx/aui/framemanager.h>
 #include <wx/dcbuffer.h>
 #include <wx/xrc/xmlres.h>
-#include <wx/aui/framemanager.h>
 
 #if HAS_LIBCLANG
 #include "ClangOutputTab.h"
@@ -77,16 +77,21 @@ void OutputPane::CreateGUIControls()
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
     SetSizer(mainSizer);
     SetMinClientSize(wxSize(-1, 250));
+#if USE_AUI_NOTEBOOK
+    long style = wxAUI_NB_TOP | wxAUI_NB_TAB_MOVE | wxAUI_NB_WINDOWLIST_BUTTON | wxAUI_NB_TAB_SPLIT;
+    m_book = new Notebook(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, style);
+    m_book->SetTabDirection(EditorConfigST::Get()->GetOptions()->GetOutputTabsDirection());
+#else
     long style = (kNotebook_Default | kNotebook_AllowDnD);
-    if(EditorConfigST::Get()->GetOptions()->GetWorkspaceTabsDirection() == wxBOTTOM) {
+    if(EditorConfigST::Get()->GetOptions()->GetOutputTabsDirection() == wxBOTTOM) {
         style |= kNotebook_BottomTabs;
-    } else if(EditorConfigST::Get()->GetOptions()->GetWorkspaceTabsDirection() == wxLEFT) {
+    } else if(EditorConfigST::Get()->GetOptions()->GetOutputTabsDirection() == wxLEFT) {
 #ifdef __WXOSX__
         style &= ~(kNotebook_BottomTabs | kNotebook_LeftTabs | kNotebook_RightTabs);
 #else
         style |= kNotebook_LeftTabs;
 #endif
-    } else if(EditorConfigST::Get()->GetOptions()->GetWorkspaceTabsDirection() == wxRIGHT) {
+    } else if(EditorConfigST::Get()->GetOptions()->GetOutputTabsDirection() == wxRIGHT) {
 #ifdef __WXOSX__
         style |= kNotebook_BottomTabs;
 #else
@@ -100,7 +105,7 @@ void OutputPane::CreateGUIControls()
     style |= kNotebook_UnderlineActiveTab;
     if(EditorConfigST::Get()->GetOptions()->IsMouseScrollSwitchTabs()) { style |= kNotebook_MouseScrollSwitchTabs; }
     m_book = new Notebook(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, style);
-
+#endif
     BitmapLoader* bmpLoader = PluginManager::Get()->GetStdIcons();
 
     // Calculate the widest tab (the one with the 'Workspace' label) TODO: What happens with translations?
@@ -215,10 +220,14 @@ void OutputPane::OnBuildEnded(clBuildEvent& e)
 
 void OutputPane::SaveTabOrder()
 {
+#if USE_AUI_NOTEBOOK
+    wxArrayString panes = m_book->GetAllTabsLabels();
+#else
     wxArrayString panes;
     clTabInfo::Vec_t tabs;
     m_book->GetAllTabs(tabs);
     std::for_each(tabs.begin(), tabs.end(), [&](clTabInfo::Ptr_t t) { panes.Add(t->GetLabel()); });
+#endif
     clConfig::Get().SetOutputTabOrder(panes, m_book->GetSelection());
 }
 
@@ -278,11 +287,13 @@ void OutputPane::OnSettingsChanged(wxCommandEvent& event)
 {
     event.Skip();
     m_book->SetTabDirection(EditorConfigST::Get()->GetOptions()->GetOutputTabsDirection());
+#if !USE_AUI_NOTEBOOK
     if(EditorConfigST::Get()->GetOptions()->IsTabColourDark()) {
         m_book->SetStyle((m_book->GetStyle() & ~kNotebook_LightTabs) | kNotebook_DarkTabs);
     } else {
         m_book->SetStyle((m_book->GetStyle() & ~kNotebook_DarkTabs) | kNotebook_LightTabs);
     }
+#endif
 }
 
 void OutputPane::OnToggleTab(clCommandEvent& event)
